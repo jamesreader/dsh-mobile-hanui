@@ -27,7 +27,7 @@ window.__ModuleLoader__.load({
     const { jsx, jsxs } = require('react/jsx-runtime')
 
     const MOBILE_MQ = '(max-width: 1023px)'
-    const STYLE_ID = 'dsh-mobile-hanui-css-v1'
+    const STYLE_ID = 'dsh-mobile-hanui-css-v2'
     const HTML_CLASS = 'dsh-mobile-shell'
     const ATTR_DETAILS = 'data-dsh-mobile-details-open'
     const FAB_POS_KEY = 'dsh-mobile-fab-pos'
@@ -339,22 +339,9 @@ window.__ModuleLoader__.load({
     margin: 0 6px !important;
     font-size: 12px !important;
   }
-  /* StatsLine composer dock — two lines; hide TTFT/tok/s */
+  /* StatsLine composer dock — hidden on phones (turn stats are noise at thumb width); desktop keeps the 2-line form. */
   html.${HTML_CLASS} .${STATS.root} {
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: unset !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
-    justify-content: center !important;
-    align-items: baseline !important;
-    gap: 2px 0 !important;
-    row-gap: 2px !important;
-    max-width: 100% !important;
-    font-size: 12px !important;
-    line-height: 18px !important;
-    text-align: center !important;
-    opacity: 0.8;
+    display: none !important;
   }
   html.${HTML_CLASS} .${STATS.root} [data-dsh-stats="speeds"],
   html.${HTML_CLASS} .${STATS.root} [data-dsh-stats="sep-hide"] {
@@ -462,8 +449,11 @@ window.__ModuleLoader__.load({
     align-items: center !important;
     column-gap: 8px !important;
     row-gap: 4px !important;
-    padding-left: 12px !important;
+    padding-left: 62px !important; /* clear the FAB (10+44px + margin) */
     padding-right: 12px !important;
+    position: relative !important;
+    z-index: 5 !important;
+    background: var(--dsw-alias-bg-base, #fff) !important; /* messages must not bleed through */
   }
   html.${HTML_CLASS} .${HDR.titleRow},
   html.${HTML_CLASS} .${HDR.titleCluster} {
@@ -480,29 +470,125 @@ window.__ModuleLoader__.load({
   }
   html.${HTML_CLASS} .${HDR.tabs} {
     grid-area: tabs !important;
-    justify-self: start !important;
+    justify-self: stretch !important; /* fill the 1fr column; scroll inside */
     min-width: 0 !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important; /* labels scroll horizontally, never verticalize */
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  html.${HTML_CLASS} .${HDR.tabs}::-webkit-scrollbar { display: none !important; }
+  html.${HTML_CLASS} .${HDR.tabs} > * {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+  html.${HTML_CLASS} .${HDR.headerUtilities} {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    min-width: 0 !important;
+    margin-right: 34px !important; /* park clear of the absolute details toggle */
+  }
+  /* Composer stats line (turns/steps/LLM times) — hidden on phones. The real
+     class lives under the composer root (-NDN2W_root); the leading dash makes
+     it un-selectable directly, hence the substring match. */
+  html.${HTML_CLASS} .${INPUT.root} [class*="NDN2W_root"] {
+    display: none !important;
+  }
+  /* Session-log button icon-only on phones: the word "Session log" collides
+     with the adjacent details toggle below ~560px. */
+  html.${HTML_CLASS} [class*="sessionLogButton"] {
+    width: 38px !important;
+    min-width: 0 !important;
+    padding-inline: 7px !important;
+    gap: 0 !important;
+  }
+  html.${HTML_CLASS} [class*="sessionLogButton"] > span {
+    display: none !important; /* the label; the SVG icon survives */
   }
   html.${HTML_CLASS} .${HDR.headerActions} {
     grid-area: actions !important;
     justify-self: end !important;
     align-self: center !important;
     min-width: 0 !important;
-    max-width: 100% !important;
-    flex-wrap: wrap !important;
-    gap: 4px 8px !important;
+    max-width: min(48vw, 210px) !important; /* cap the auto column so crumbs live */
+    flex-wrap: nowrap !important;
+    flex-direction: row !important; /* icon chips sit side by side, one line */
+    align-items: center !important;
+    gap: 6px !important;
     overflow: visible !important; /* don't clip subagent/jobs buttons or their menus */
   }
+  html.${HTML_CLASS} .${HDR.headerActions} > * { min-width: 0 !important; }
   html.${HTML_CLASS} .${HDR.headerActions} .${PRESET_LABEL} {
     display: inline-flex !important;
     align-items: center !important;
-    gap: 4px !important;
+    gap: 0 !important;
     max-width: 100% !important;
     overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    font-size: 12px !important;
+    font-size: 0 !important; /* icon-only chip; the menu carries the words */
     line-height: 18px !important;
+  }
+
+  /* Header redesign (phones): demote verbose chips to icons so everything
+     fits two lines — title row, then tabs + icon chips. Text lives in the
+     popovers the chips open, not on the chips themselves. */
+  html.${HTML_CLASS} .${PRESET_LABEL} {
+    font-size: 0 !important; /* keeps the leading icon, drops "Standard mode" */
+    gap: 0 !important;
+  }
+  html.${HTML_CLASS} [class*="QsffPG_trigger"] {
+    font-size: 0 !important; /* keeps the job dots + chevron, drops the prose */
+    gap: 0 !important;
+    padding-inline: 8px !important;
+  }
+  /* Jobs popover: centered, viewport-bounded — job rows need the full width
+     (the anchored popup clipped long paths after a few glyphs). */
+  html.${HTML_CLASS} [class*="QsffPG_menu"] {
+    position: fixed !important;
+    left: 50% !important;
+    right: auto !important;
+    top: 112px !important;
+    transform: translateX(-50%) !important;
+    width: min(92vw, 420px) !important;
+    max-height: 58vh !important;
+    overflow: auto !important;
+    z-index: 60 !important;
+  }
+
+  /* Overlay toggles: pill directly below the FAB (top-left), with a gap. */
+  html.${HTML_CLASS} .dshMobToggles {
+    position: fixed !important;
+    top: 70px !important;
+    left: 12px !important;
+    right: auto !important;
+    z-index: 70 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  html.${HTML_CLASS} .dshMobToggle {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.28)) !important;
+    background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff)) !important;
+    color: var(--dsw-alias-text-1, #f2f4f8) !important;
+    opacity: .85;
+    padding: 6px !important;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  html.${HTML_CLASS} .dshMobToggle svg { width: 100%; height: 100%; }
+  html.${HTML_CLASS} .dshMobToggle:active { opacity: 1; }
+  html.${HTML_CLASS}.dsh-mob-nabar .dshMobToggle { opacity: .9; }
+
+  /* Hide-top-bar mode: pure reading view; FAB and toggles stay reachable. */
+  html.${HTML_CLASS}.dsh-mob-nabar .${HDR.header} {
+    display: none !important;
   }
 
   /* Subagent catalog: keep the trigger visible and pull its dropdown out of
@@ -1480,6 +1566,31 @@ window.__ModuleLoader__.load({
         openSidebar()
       }
 
+      // Top-bar hide + fullscreen toggles (mobile-only overlay chrome)
+      const [barHidden, setBarHidden] = React.useState(() => {
+        const on = localStorage.getItem('dsh-mob-nabar') === '1'
+        document.documentElement.classList.toggle('dsh-mob-nabar', on)
+        return on
+      })
+      const [fsOn, setFsOn] = React.useState(() => !!document.fullscreenElement)
+      React.useEffect(() => {
+        const sync = () => setFsOn(!!document.fullscreenElement)
+        document.addEventListener('fullscreenchange', sync)
+        return () => document.removeEventListener('fullscreenchange', sync)
+      }, [])
+      const toggleBar = () => {
+        const next = !barHidden
+        setBarHidden(next)
+        document.documentElement.classList.toggle('dsh-mob-nabar', next)
+        localStorage.setItem('dsh-mob-nabar', next ? '1' : '0')
+      }
+      const toggleFs = () => {
+        try {
+          if (document.fullscreenElement) document.exitFullscreen()
+          else document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+        } catch { /* iOS Safari: use Add-to-Home-Screen standalone instead */ }
+      }
+
       if (!mobile) return null
 
       const sidebarOpen = !!frame && !collapsed
@@ -1517,6 +1628,35 @@ window.__ModuleLoader__.load({
             'data-visible': showBackdrop ? 'true' : 'false',
             'aria-label': '关闭面板',
             onClick: onBackdropClick,
+          }),
+          jsx('div', {
+            className: 'dshMobToggles',
+            children: [
+              jsx('button', {
+                type: 'button',
+                className: 'dshMobToggle',
+                'aria-label': barHidden ? '显示顶栏' : '隐藏顶栏',
+                onClick: toggleBar,
+                children: jsx('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', children: jsxs('g', { children: [
+                  jsx('rect', { x: 3, y: 3, width: 18, height: 5, rx: 1.5, fill: 'currentColor', stroke: 'none' }, 'bar'),
+                  jsxs('g', { transform: barHidden ? 'rotate(180 12 14)' : undefined, children: [
+                    jsx('path', { d: 'M12 10v9' }, 'shaft'),
+                    jsx('path', { d: 'M8 15l4 4 4-4' }, 'head'),
+                  ] }, 'arrow'),
+                ] }) }),
+              }, 'bar'),
+              jsx('button', {
+                type: 'button',
+                className: 'dshMobToggle',
+                'aria-label': fsOn ? '退出全屏' : '全屏',
+                onClick: toggleFs,
+                children: jsx('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', children: fsOn ? jsxs('g', { children: [
+                  jsx('path', { d: 'M9 4v3a2 2 0 0 1-2 2H4M15 4v3a2 2 0 0 0 2 2h3M9 20v-3a2 2 0 0 0-2-2H4M15 20v-3a2 2 0 0 1 2-2h3' }, 'c'),
+                ] }) : jsxs('g', { children: [
+                  jsx('path', { d: 'M4 9V6a2 2 0 0 1 2-2h3M20 9V6a2 2 0 0 0-2-2h-3M4 15v3a2 2 0 0 0 2 2h3M20 15v3a2 2 0 0 1-2 2h-3' }, 'c'),
+                ] }) }),
+              }, 'fs'),
+            ],
           }),
         ],
       })
