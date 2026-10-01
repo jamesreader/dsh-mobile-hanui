@@ -781,6 +781,19 @@ window.__ModuleLoader__.load({
   }
 }
 
+/* Hero route (React chrome does not mount there): module code owns a bare
+   drawer opener; the sidebar itself opens through CORE's own toggle so the
+   collapsed flag stays the single source of truth. */
+.dshMobHeroFab { position: fixed; z-index: 71; left: 10px; top: 10px; width: 38px; height: 38px;
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  background: rgba(140,140,150,.16); border: 1px solid rgba(150,150,160,.35); color: #c9c9d1; }
+.dshMobHeroFab svg { width: 18px; height: 18px; }
+body[data-dsh-hero-open="1"] .dshMobHeroFab { display: none; }
+.dshMobHeroBd { position: fixed; inset: 0; z-index: 69; background: rgba(0,0,0,.5); border: 0; padding: 0; }
+body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-index: 70;
+  inset: 0 auto 0 0; width: min(80vw, 320px); max-width: 80vw; overflow-y: auto; overflow-x: clip;
+  box-shadow: 12px 0 40px rgba(0,0,0,.55); }
+
 .dshMobMenu {
   position: fixed;
   z-index: 60;
@@ -1174,8 +1187,12 @@ window.__ModuleLoader__.load({
       // needed; Chrome-emulated geometry is correct, which is why desktop
       // testing never shows it). Pin the frame without moving it: moving the
       // node would sever React's delegated listeners (dead option buttons).
-      // Instead accumulate a corrective translate per node lifetime, using
-      // the visual viewport so a popped keyboard shrinks the panel too.
+      // Compute a corrective translate fresh each tick (idempotent — derives
+      // the natural rect by subtracting the currently applied transform).
+      // Never FORCE the card's height with the keyboard up: squishing it made
+      // its own fields spill under the backdrop, so tapping the free-text
+      // answer landed on backdrop and closed the panel (James, 2026-09-30).
+      // Instead float the card so its bottom rests just above the keyboard.
       useEffect(() => {
         if (!mobile) return
         const tick = () => {
@@ -1184,16 +1201,23 @@ window.__ModuleLoader__.load({
           const vv = window.visualViewport
           const vw = (vv && vv.width) || window.innerWidth
           const vh = (vv && vv.height) || window.innerHeight
+          const vTop = (vv && vv.offsetTop) || 0
+          const layoutH = window.innerHeight
+          const kb = layoutH - vh > 140
           el.style.width = vw + 'px'
-          el.style.height = vh + 'px'
           const r = el.getBoundingClientRect()
-          if (Math.abs(r.x) > 0.5 || Math.abs(r.y) > 0.5) {
-            const base = el.dataset.hnpin ? JSON.parse(el.dataset.hnpin) : { x: 0, y: 0 }
-            base.x -= r.x
-            base.y -= r.y
-            el.dataset.hnpin = JSON.stringify(base)
-            el.style.transform = 'translate(' + base.x + 'px,' + base.y + 'px)'
-          }
+          const cur = el.dataset.hnpin ? JSON.parse(el.dataset.hnpin) : { x: 0, y: 0 }
+          const nat = { x: r.x - cur.x, y: r.y - cur.y, b: r.bottom - cur.y, h: r.height }
+          if (kb && nat.h > vh - 16) el.style.height = (vh - 16) + 'px'
+          else if (el.style.height) el.style.height = ''
+          const r2 = el.style.height ? el.getBoundingClientRect() : r
+          const natB = r2.bottom - cur.y
+          const tx = (window.innerWidth - r2.width) / 2 - nat.x
+          const wantB = kb ? vTop + vh - 12 : Math.min(natB, layoutH - 16)
+          let ty = wantB - natB
+          if (nat.y + ty < vTop + 8) ty = vTop + 8 - nat.y
+          el.dataset.hnpin = JSON.stringify({ x: tx, y: ty })
+          el.style.transform = 'translate(' + tx + 'px,' + ty + 'px)'
         }
         const iv = setInterval(tick, 150)
         tick()
@@ -1723,16 +1747,67 @@ window.__ModuleLoader__.load({
       // effect's grid-placement canary may still remove it if the layout breaks.
       try {
         const mq = window.matchMedia(MOBILE_MQ)
+        // The landing/hero route mounts no React chrome (FAB, drawer, toggles)
+        // even though the mobile class/CSS apply, leaving a styled screen with
+        // no controls. Detect that route by the hero composer's presence and
+        // give it one opener; opening goes through CORE's own toggleSidebar
+        // (via the native toggle button) so the collapsed flag stays correct.
+        // Welcome screen = composer present but no session tabs (Chat/…) yet;
+        // there the React chrome stays unmounted, so module code covers it.
+        const heroEl = () =>
+          !!document.querySelector('[contenteditable]') &&
+          !document.querySelector('.' + HDR.tabs)
+        const sidebarOpen = () =>
+          !!document.querySelector('[aria-label="Collapse sidebar"]')
+        const coreToggle = () => {
+          const btn = document.querySelector(
+            '[aria-label="Expand sidebar"], [aria-label="Collapse sidebar"]')
+          if (btn) btn.click()
+          else {
+            const l = getLayout()
+            l?.toggleSidebar?.()
+          }
+        }
+        const heroTick = () => {
+          if (!document.body) return
+          const fab = document.getElementById('dshMobHeroFab')
+          const bd = document.getElementById('dshMobHeroBd')
+          const hero = mq.matches && !shellDisabled() && !!heroEl()
+          if (!hero) {
+            if (fab) fab.remove()
+            if (bd) bd.remove()
+            document.body.removeAttribute('data-dsh-hero-open')
+            return
+          }
+          if (!fab) {
+            const b = document.createElement('button')
+            b.id = 'dshMobHeroFab'
+            b.className = 'dshMobHeroFab'
+            b.setAttribute('aria-label', 'Open sessions')
+            b.innerHTML =
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>'
+            b.addEventListener('click', coreToggle)
+            document.body.appendChild(b)
+          }
+          const open = sidebarOpen()
+          document.body.toggleAttribute('data-dsh-hero-open', open)
+          if (open && !bd) {
+            const d = document.createElement('button')
+            d.id = 'dshMobHeroBd'
+            d.className = 'dshMobHeroBd'
+            d.setAttribute('aria-label', 'Close sessions')
+            d.addEventListener('click', coreToggle)
+            document.body.appendChild(d)
+          } else if (!open && bd) bd.remove()
+        }
         const sync = () => {
-          if (window.__hanuiApply) window.__hanuiApply.ticks = (window.__hanuiApply.ticks || 0) + 1
           if (mq.matches && !shellDisabled()) document.documentElement.classList.add(HTML_CLASS)
+          heroTick()
         }
         sync()
         mq.addEventListener('change', sync)
-        // On routes without a session frame (landing hero), a MobileChrome
-        // instance's cleanup can remove the class its sibling just added —
-        // React lifecycle races, not a layout failure. Re-assert periodically;
-        // cost is one classList call every 400ms on phone widths only.
+        // React lifecycle races can drop the class on routes without a frame;
+        // re-asserting on an interval is one call per 400ms at phone widths.
         setInterval(sync, 400)
       } catch (_) {}
       ctx.effect(
