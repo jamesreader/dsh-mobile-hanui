@@ -339,7 +339,8 @@ window.__ModuleLoader__.load({
     margin: 0 6px !important;
     font-size: 12px !important;
   }
-  /* StatsLine composer dock — hidden on phones (turn stats are noise at thumb width); desktop keeps the 2-line form. */
+  /* StatsLine composer dock — hidden on phones (James: "could probably do
+     without the stats at the bottom on mobile"); desktop keeps the 2-line form. */
   html.${HTML_CLASS} .${STATS.root} {
     display: none !important;
   }
@@ -543,7 +544,7 @@ window.__ModuleLoader__.load({
     padding-inline: 8px !important;
   }
   /* Jobs popover: centered, viewport-bounded — job rows need the full width
-     (the anchored popup clipped long paths after a few glyphs). */
+     (the anchored popup clipped every path to "C:\Users\Read…"). */
   html.${HTML_CLASS} [class*="QsffPG_menu"] {
     position: fixed !important;
     left: 50% !important;
@@ -585,6 +586,19 @@ window.__ModuleLoader__.load({
   html.${HTML_CLASS} .dshMobToggle svg { width: 100%; height: 100%; }
   html.${HTML_CLASS} .dshMobToggle:active { opacity: 1; }
   html.${HTML_CLASS}.dsh-mob-nabar .dshMobToggle { opacity: .9; }
+
+  /* While a question takeover is up, its mask already covers the toggles —
+     drop them from the layer stack too so they can never float above it
+     (iOS compositing differences). */
+  html.${HTML_CLASS}:has(.${QUESTION.frame}) .dshMobToggles {
+    display: none !important;
+  }
+
+  /* Long unbreakable strings must push text height, never panel width. */
+  html.${HTML_CLASS} .${QUESTION.body} {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
 
   /* Hide-top-bar mode: pure reading view; FAB and toggles stay reachable. */
   html.${HTML_CLASS}.dsh-mob-nabar .${HDR.header} {
@@ -1154,6 +1168,38 @@ window.__ModuleLoader__.load({
         }
       }, [mobile])
 
+      // iOS Safari bug: position:fixed inside the (sticky/overflow) composer
+      // seat renders offset from the viewport — the question panel appears
+      // wider than the screen and its submit clips off-edge (no keyboard
+      // needed; Chrome-emulated geometry is correct, which is why desktop
+      // testing never shows it). Pin the frame without moving it: moving the
+      // node would sever React's delegated listeners (dead option buttons).
+      // Instead accumulate a corrective translate per node lifetime, using
+      // the visual viewport so a popped keyboard shrinks the panel too.
+      useEffect(() => {
+        if (!mobile) return
+        const tick = () => {
+          const el = document.querySelector('.' + QUESTION.frame)
+          if (!el) return
+          const vv = window.visualViewport
+          const vw = (vv && vv.width) || window.innerWidth
+          const vh = (vv && vv.height) || window.innerHeight
+          el.style.width = vw + 'px'
+          el.style.height = vh + 'px'
+          const r = el.getBoundingClientRect()
+          if (Math.abs(r.x) > 0.5 || Math.abs(r.y) > 0.5) {
+            const base = el.dataset.hnpin ? JSON.parse(el.dataset.hnpin) : { x: 0, y: 0 }
+            base.x -= r.x
+            base.y -= r.y
+            el.dataset.hnpin = JSON.stringify(base)
+            el.style.transform = 'translate(' + base.x + 'px,' + base.y + 'px)'
+          }
+        }
+        const iv = setInterval(tick, 150)
+        tick()
+        return () => clearInterval(iv)
+      }, [mobile])
+
       // Suppress programmatic input focus on mobile: switching sessions fires
       // an el.focus() in the conversation InputBar, which pops the soft keyboard.
       // We only let focus through when the user actually tapped the composer.
@@ -1666,6 +1712,29 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       ensureStyle()
+      // Attach the mobile chrome class from viewport width alone, at module
+      // load — NOT only when the React session frame mounts. On the landing /
+      // "new session" hero there is no session frame and the shell.overlay
+      // component never mounts, so the frame-scoped effect leaves html without
+      // the mobile class. Every `html.dsh-mobile …` override (including the
+      // rules that collapse the desktop sidebar into an off-canvas drawer)
+      // then goes inert and the CORE collapsed sidebar rail shows through on
+      // the phone. This hook keeps the class correct on every route; the frame
+      // effect's grid-placement canary may still remove it if the layout breaks.
+      try {
+        const mq = window.matchMedia(MOBILE_MQ)
+        const sync = () => {
+          if (window.__hanuiApply) window.__hanuiApply.ticks = (window.__hanuiApply.ticks || 0) + 1
+          if (mq.matches && !shellDisabled()) document.documentElement.classList.add(HTML_CLASS)
+        }
+        sync()
+        mq.addEventListener('change', sync)
+        // On routes without a session frame (landing hero), a MobileChrome
+        // instance's cleanup can remove the class its sibling just added —
+        // React lifecycle races, not a layout failure. Re-assert periodically;
+        // cost is one classList call every 400ms on phone widths only.
+        setInterval(sync, 400)
+      } catch (_) {}
       ctx.effect(
         () =>
           ctx.slots.inject('shell.overlay', () =>
