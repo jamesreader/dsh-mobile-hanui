@@ -1664,7 +1664,13 @@ body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-ind
       if (!mobile) return null
 
       const sidebarOpen = !!frame && !collapsed
-      const showMenu = !!frame && collapsed && !detailsOpen
+      // The whale is the ONLY opener for the session drawer on a phone. The
+      // previous gate (`&& collapsed`) meant a desynced data-sidebar-collapsed
+      // flag — or simply opening a session while the sidebar was left expanded
+      // — deleted the button entirely (James: "can't start a new session, the
+      // whale is gone inside a session"). Render it whenever a frame exists;
+      // openSidebar() is a toggle, and the icon flips via data-open below.
+      const showMenu = !!frame && !detailsOpen
       const showBackdrop = sidebarOpen || detailsOpen
 
       const fabStyle = fabPos
@@ -1683,6 +1689,7 @@ body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-ind
             ref: fabBtnRef,
             className: 'dshMobMenu',
             'data-visible': showMenu ? 'true' : 'false',
+            'data-open': sidebarOpen ? 'true' : 'false',
             'aria-label': '打开菜单',
             style: fabStyle,
             onPointerDown: onFabPointerDown,
