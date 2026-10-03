@@ -156,6 +156,11 @@ window.__ModuleLoader__.load({
     }
 
     const CSS = `
+/* Stacking contract — ONE layer each, no exceptions:
+     backdrop 45 < sidebar 50 < details 55 < FAB 60
+   Open/closed state is driven solely by the frame's data-sidebar-collapsed
+   attribute (transform + pointer-events below). Nothing else may open or
+   restack the drawer. */
 @media ${MOBILE_MQ} {
   /* Local chat: full width, never translated / squeezed */
   html.${HTML_CLASS} .${CLS.frame} {
@@ -781,18 +786,6 @@ window.__ModuleLoader__.load({
   }
 }
 
-/* Hero route (React chrome does not mount there): module code owns a bare
-   drawer opener; the sidebar itself opens through CORE's own toggle so the
-   collapsed flag stays the single source of truth. */
-.dshMobHeroFab { position: fixed; z-index: 71; left: 10px; top: 10px; width: 38px; height: 38px;
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  background: rgba(140,140,150,.16); border: 1px solid rgba(150,150,160,.35); color: #c9c9d1; }
-.dshMobHeroFab svg { width: 18px; height: 18px; }
-body[data-dsh-hero-open="1"] .dshMobHeroFab { display: none; }
-.dshMobHeroBd { position: fixed; inset: 0; z-index: 69; background: rgba(0,0,0,.5); border: 0; padding: 0; }
-body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-index: 70;
-  inset: 0 auto 0 0; width: min(80vw, 320px); max-width: 80vw; overflow-y: auto; overflow-x: clip;
-  box-shadow: 12px 0 40px rgba(0,0,0,.55); }
 
 .dshMobMenu {
   position: fixed;
@@ -1193,7 +1186,7 @@ body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-ind
       // its own fields spill under the backdrop, so tapping the free-text
       // answer landed on backdrop and closed the panel (James, 2026-09-30).
       // Instead float the card so its bottom rests just above the keyboard.
-      useEffect(() => {
+      React.useEffect(() => {
         if (!mobile) return
         const tick = () => {
           const el = document.querySelector('.' + QUESTION.frame)
@@ -1741,82 +1734,28 @@ body[data-dsh-hero-open="1"] .${CLS.sidebar} { position: fixed !important; z-ind
 
     const inject = ['slots', 'layout']
 
+    // Module-scope hooks: executed the moment this bundle is evaluated, on
+    // every route — including ones where apply() is never called.
+    if (typeof window !== 'undefined') {
+      try {
+        const mq0 = window.matchMedia(MOBILE_MQ)
+        const sync0 = () => {
+          if (mq0.matches && !shellDisabled()) document.documentElement.classList.add(HTML_CLASS)
+        }
+        sync0()
+        mq0.addEventListener('change', sync0)
+        // React lifecycle races can drop the class on routes without a frame;
+        // re-asserting costs one classList call every 400ms at phone widths.
+        setInterval(sync0, 400)
+      } catch (_) {}
+    }
+
     function apply(ctx) {
       ensureStyle()
-      // Attach the mobile chrome class from viewport width alone, at module
-      // load — NOT only when the React session frame mounts. On the landing /
-      // "new session" hero there is no session frame and the shell.overlay
-      // component never mounts, so the frame-scoped effect leaves html without
-      // the mobile class. Every `html.dsh-mobile …` override (including the
-      // rules that collapse the desktop sidebar into an off-canvas drawer)
-      // then goes inert and the CORE collapsed sidebar rail shows through on
-      // the phone. This hook keeps the class correct on every route; the frame
-      // effect's grid-placement canary may still remove it if the layout breaks.
-      try {
-        const mq = window.matchMedia(MOBILE_MQ)
-        // The landing/hero route mounts no React chrome (FAB, drawer, toggles)
-        // even though the mobile class/CSS apply, leaving a styled screen with
-        // no controls. Detect that route by the hero composer's presence and
-        // give it one opener; opening goes through CORE's own toggleSidebar
-        // (via the native toggle button) so the collapsed flag stays correct.
-        // Welcome screen = composer present but no session tabs (Chat/…) yet;
-        // there the React chrome stays unmounted, so module code covers it.
-        const heroEl = () =>
-          !!document.querySelector('[contenteditable]') &&
-          !document.querySelector('.' + HDR.tabs)
-        const sidebarOpen = () =>
-          !!document.querySelector('[aria-label="Collapse sidebar"]')
-        const coreToggle = () => {
-          const btn = document.querySelector(
-            '[aria-label="Expand sidebar"], [aria-label="Collapse sidebar"]')
-          if (btn) btn.click()
-          else {
-            const l = getLayout()
-            l?.toggleSidebar?.()
-          }
-        }
-        const heroTick = () => {
-          if (!document.body) return
-          const fab = document.getElementById('dshMobHeroFab')
-          const bd = document.getElementById('dshMobHeroBd')
-          const hero = mq.matches && !shellDisabled() && !!heroEl()
-          if (!hero) {
-            if (fab) fab.remove()
-            if (bd) bd.remove()
-            document.body.removeAttribute('data-dsh-hero-open')
-            return
-          }
-          if (!fab) {
-            const b = document.createElement('button')
-            b.id = 'dshMobHeroFab'
-            b.className = 'dshMobHeroFab'
-            b.setAttribute('aria-label', 'Open sessions')
-            b.innerHTML =
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>'
-            b.addEventListener('click', coreToggle)
-            document.body.appendChild(b)
-          }
-          const open = sidebarOpen()
-          document.body.toggleAttribute('data-dsh-hero-open', open)
-          if (open && !bd) {
-            const d = document.createElement('button')
-            d.id = 'dshMobHeroBd'
-            d.className = 'dshMobHeroBd'
-            d.setAttribute('aria-label', 'Close sessions')
-            d.addEventListener('click', coreToggle)
-            document.body.appendChild(d)
-          } else if (!open && bd) bd.remove()
-        }
-        const sync = () => {
-          if (mq.matches && !shellDisabled()) document.documentElement.classList.add(HTML_CLASS)
-          heroTick()
-        }
-        sync()
-        mq.addEventListener('change', sync)
-        // React lifecycle races can drop the class on routes without a frame;
-        // re-asserting on an interval is one call per 400ms at phone widths.
-        setInterval(sync, 400)
-      } catch (_) {}
+      // Chrome mounts on every route via shell.overlay (verified live); the
+      // DOM-injected hero drawer was a workaround for a React crash that is
+      // gone. One opener (the FAB), one backdrop, one state source: the
+      // frame's data-sidebar-collapsed attribute.
       ctx.effect(
         () =>
           ctx.slots.inject('shell.overlay', () =>
